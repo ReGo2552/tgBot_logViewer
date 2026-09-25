@@ -32,7 +32,8 @@ func TestUnitSudo(t *testing.T) {
 
 func TestSudoers(t *testing.T) {
 	s := Sudoers("logbot")
-	if !strings.Contains(s, "logbot ALL=(root) NOPASSWD: /usr/local/bin/logviewer docker-helper *\n") {
+	if !strings.Contains(s, "logbot ALL=(root) NOPASSWD: /usr/local/bin/logviewer docker-helper *\n") ||
+		!strings.Contains(s, "\nDefaults:logbot !pam_session\n") {
 		t.Errorf("sudoers:\n%s", s)
 	}
 }

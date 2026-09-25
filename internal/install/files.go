@@ -70,6 +70,10 @@ func Sudoers(user string) string {
 	return fmt.Sprintf(`# logviewer: пользователь %[1]s читает логи docker-контейнеров из конфига — и только.
 # Создано командой: logviewer install
 %[1]s ALL=(root) NOPASSWD: %[2]s docker-helper *
+
+# Без PAM-сессии: иначе каждый запрос логов добавляет в журнал две строки
+# «session opened/closed». Строка с самой командой (аудит) остаётся.
+Defaults:%[1]s !pam_session
 `, user, config.BinaryPath)
 }
 

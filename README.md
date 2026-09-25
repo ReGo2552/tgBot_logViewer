@@ -43,7 +43,11 @@ systemd-служб (journald), docker-контейнеров и текстовы
 
 ```
 logbot ALL=(root) NOPASSWD: /usr/local/bin/logviewer docker-helper *
+Defaults:logbot !pam_session
 ```
+
+(`!pam_session` убирает из журнала строки «session opened/closed» на каждый запрос;
+строка с самой командой остаётся для аудита.)
 
 `docker-helper` работает от root и сам проверяет запрос:
 - конфиг читается только из `/etc/log-viewer/config.yaml`, и только если

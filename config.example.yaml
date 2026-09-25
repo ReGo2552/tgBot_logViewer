@@ -1,0 +1,41 @@
+# Пример конфига logviewer. Настоящий лежит в /etc/log-viewer/config.yaml;
+# черновик под свой сервер делает `sudo logviewer discover`.
+
+# Telegram ID тех, кому бот отвечает (узнать свой: @userinfobot).
+# Бот отвечает только им и только в личных сообщениях.
+admins: [123456789]
+
+# Часовой пояс для времени в логах. Пусто — пояс сервера.
+timezone: Europe/Moscow
+
+lines:
+  default: 100         # сколько строк показывать по умолчанию
+  max: 1000            # больше за один запрос не отдаём
+  filter_window: 5000  # среди скольких последних строк искать при фильтре
+
+docker:
+  binary: docker       # или podman
+  # sudo   — бот ходит в docker через sudo-правило на одну команду (рекомендуется);
+  # direct — пользователь бота сам в группе docker, а это равносильно root.
+  access: sudo
+
+redact:
+  disable: false
+  extra:               # свои регулярные выражения; совпадение заменяется на ***
+    - '\b\d{4} \d{4} \d{4} \d{4}\b'
+
+sources:
+  # systemd: логи службы из journald. .service можно не писать.
+  - {id: caddy, type: systemd, unit: caddy.service}
+  - {id: mybot, type: systemd, unit: mybot, title: "Мой бот"}
+
+  # docker: один контейнер…
+  - {id: kuma, type: docker, container: uptime-kuma}
+  # …все контейнеры compose-проекта (в боте появится выбор контейнера)…
+  - {id: immich, type: docker, match: "stack:immich"}
+  # …или маска по имени; "*" — вообще все контейнеры, осознанно.
+  - {id: web, type: docker, match: "web_*"}
+
+  # файлы: путь или маска (в боте появится выбор файла)
+  - {id: minecraft, type: file, path: /srv/minecraft/logs/latest.log}
+  - {id: nginx, type: file, path: "/var/log/nginx/*.log"}

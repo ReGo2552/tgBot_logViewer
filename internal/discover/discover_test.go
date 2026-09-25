@@ -12,26 +12,26 @@ import (
 	"github.com/ReGo2552/tgBot_logViewer/internal/logs"
 )
 
-// Вывод systemctl show с home-server (сокращён).
-const showOut = `Id=mc_bot.service
-Description=Minecraft Telegram control bot
-FragmentPath=/etc/systemd/system/mc_bot.service
+// Вывод systemctl show (сокращён; юниты вымышленные, но типичные).
+const showOut = `Id=weather_bot.service
+Description=Weather Telegram bot
+FragmentPath=/etc/systemd/system/weather_bot.service
 LoadState=loaded
 ActiveState=active
 UnitFileState=enabled
-WorkingDirectory=/home/erik/bots/mc_bot
+WorkingDirectory=/home/alice/bots/weather_bot
 StandardOutput=journal
-ExecStart={ path=/home/erik/bots/mc_bot/.venv/bin/python ; argv[]=/home/erik/bots/mc_bot/.venv/bin/python /home/erik/bots/mc_bot/main.py ; ignore_errors=no }
+ExecStart={ path=/home/alice/bots/weather_bot/.venv/bin/python ; argv[]=/home/alice/bots/weather_bot/.venv/bin/python /home/alice/bots/weather_bot/main.py ; ignore_errors=no }
 
-Id=kino-monitor.service
-Description=megakino42 schedule monitor
-FragmentPath=/etc/systemd/system/kino-monitor.service
+Id=backup-report.service
+Description=Nightly backup report
+FragmentPath=/etc/systemd/system/backup-report.service
 LoadState=loaded
 ActiveState=inactive
 UnitFileState=disabled
-WorkingDirectory=/home/erik/bots/kino-monitor
+WorkingDirectory=/home/alice/scripts/backup-report
 StandardOutput=journal
-ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /home/erik/bots/kino-monitor/monitor.py }
+ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /home/alice/scripts/backup-report/report.py }
 
 Id=caddy.service
 Description=Caddy
@@ -68,18 +68,18 @@ LoadState=loaded
 ActiveState=inactive
 UnitFileState=static
 
-Id=snap.v2raya.v2raya.service
-FragmentPath=/etc/systemd/system/snap.v2raya.v2raya.service
+Id=snap.lxd.daemon.service
+FragmentPath=/etc/systemd/system/snap.lxd.daemon.service
 LoadState=loaded
 ActiveState=inactive
 UnitFileState=disabled
 
-Id=ollama.service
-FragmentPath=/etc/systemd/system/ollama.service
+Id=node_exporter.service
+FragmentPath=/usr/lib/systemd/system/node_exporter.service
 LoadState=loaded
 ActiveState=active
 UnitFileState=enabled
-ExecStart={ path=/usr/local/bin/ollama ; argv[]=/usr/local/bin/ollama serve }
+ExecStart={ path=/usr/local/bin/node_exporter ; argv[]=/usr/local/bin/node_exporter }
 
 Id=mybot.service
 FragmentPath=/usr/lib/systemd/system/mybot.service
@@ -101,8 +101,8 @@ func TestClassifyUnits(t *testing.T) {
 		}
 	}
 	want := map[string]bool{ // id → Enabled; отсутствие — отброшен
-		"mc_bot.service": true, "kino-monitor.service": true, "caddy.service": true,
-		"colord.service": false, "ollama.service": true, "mybot.service": true,
+		"weather_bot.service": true, "backup-report.service": true, "caddy.service": true,
+		"colord.service": false, "node_exporter.service": true, "mybot.service": true,
 	}
 	for id, en := range want {
 		c, ok := got[id]
@@ -114,7 +114,7 @@ func TestClassifyUnits(t *testing.T) {
 			t.Errorf("%s: Enabled=%v (%s)", id, c.Enabled, c.Note)
 		}
 	}
-	for _, id := range []string{"apt-daily.service", "snap.v2raya.v2raya.service", "apparmor.service", "user@1000.service"} {
+	for _, id := range []string{"apt-daily.service", "snap.lxd.daemon.service", "apparmor.service", "user@1000.service"} {
 		if _, ok := got[id]; ok {
 			t.Errorf("%s не должен предлагаться", id)
 		}
@@ -123,41 +123,41 @@ func TestClassifyUnits(t *testing.T) {
 		if u.ID == "mybot.service" && u.stdoutFile() != "/var/log/mybot.log" {
 			t.Errorf("stdout в файл: %q", u.stdoutFile())
 		}
-		if u.ID == "mc_bot.service" && appDir(u.ExecPath) != "/home/erik/bots/mc_bot" {
+		if u.ID == "weather_bot.service" && appDir(u.ExecPath) != "/home/alice/bots/weather_bot" {
 			t.Errorf("appDir: %q", appDir(u.ExecPath))
 		}
 	}
 }
 
-func homeContainers() []logs.Container {
+func sampleContainers() []logs.Container {
 	return []logs.Container{
-		{Name: "collabora", State: "running", Project: "collabora"},
-		{Name: "immich_machine_learning", State: "running", Project: "immich"},
-		{Name: "immich_postgres", State: "running", Project: "immich"},
-		{Name: "immich_server", State: "running", Project: "immich"},
-		{Name: "nextcloud_app", State: "running", Project: "nextcloud"},
-		{Name: "nextcloud_db", State: "running", Project: "nextcloud"},
-		{Name: "open-webui", State: "running", Project: "llm-webui"},
-		{Name: "portainer", State: "running"},
+		{Name: "vaultwarden", State: "running", Project: "vaultwarden"},
+		{Name: "paperless_broker", State: "running", Project: "paperless"},
+		{Name: "paperless_db", State: "running", Project: "paperless"},
+		{Name: "paperless_web", State: "running", Project: "paperless"},
+		{Name: "gitea_web", State: "running", Project: "gitea"},
+		{Name: "gitea_db", State: "running", Project: "gitea"},
+		{Name: "jellyfin", State: "running", Project: "media"},
+		{Name: "watchtower", State: "running"},
 		{Name: "old", State: "exited"},
 	}
 }
 
 func TestDockerCandidates(t *testing.T) {
-	cs := dockerCandidates(homeContainers())
+	cs := dockerCandidates(sampleContainers())
 	var got []string
 	for _, c := range cs {
 		s := c.Source
 		got = append(got, s.ID+"="+s.Container+s.Match)
 	}
-	want := "collabora=collabora|immich=stack:immich|nextcloud=stack:nextcloud|old=old|open-webui=open-webui|portainer=portainer"
+	want := "gitea=stack:gitea|jellyfin=jellyfin|old=old|paperless=stack:paperless|vaultwarden=vaultwarden|watchtower=watchtower"
 	if strings.Join(got, "|") != want {
 		t.Errorf("\n got %s\nwant %s", strings.Join(got, "|"), want)
 	}
 }
 
 func sampleResult() *Result {
-	r := &Result{Containers: homeContainers()}
+	r := &Result{Containers: sampleContainers()}
 	for _, u := range parseShow([]byte(showOut)) {
 		if c, ok := classifyUnit(u); ok {
 			r.Systemd = append(r.Systemd, c)
@@ -165,9 +165,9 @@ func sampleResult() *Result {
 	}
 	r.Docker = dockerCandidates(r.Containers)
 	r.Files = []Candidate{
-		{Source: config.Source{Type: config.TypeFile, Path: "/srv/minecraft/logs/latest.log"}, Enabled: true,
-			Problem: &access.Problem{What: "logbot не может войти в каталог /srv/minecraft", Fix: "sudo setfacl -m u:logbot:x /srv/minecraft"}},
-		{Source: config.Source{Type: config.TypeFile, Path: "/srv/minecraft/plugins/AuthMe/authme.log"}},
+		{Source: config.Source{Type: config.TypeFile, Path: "/srv/factorio/logs/current.log"}, Enabled: true,
+			Problem: &access.Problem{What: "logbot не может войти в каталог /srv/factorio", Fix: "sudo setfacl -m u:logbot:x /srv/factorio"}},
+		{Source: config.Source{Type: config.TypeFile, Path: "/srv/factorio/mods/chatlog/chatlog.log"}},
 		{Source: config.Source{Type: config.TypeFile, Path: "/srv/weird dir/on.log"}},
 	}
 	r.AssignIDs(nil)
@@ -177,7 +177,7 @@ func sampleResult() *Result {
 // Черновик обязан парситься — иначе install положит нерабочий конфиг.
 func TestRenderConfigRoundTrip(t *testing.T) {
 	r := sampleResult()
-	text := RenderConfig(r, Meta{Host: "home-server", Admins: []int64{42}, User: "logbot", Generated: time.Now()})
+	text := RenderConfig(r, Meta{Host: "example", Admins: []int64{42}, User: "logbot", Generated: time.Now()})
 	cfg, err := config.Parse([]byte(text))
 	if err != nil {
 		t.Fatalf("%v\n%s", err, text)
@@ -186,12 +186,12 @@ func TestRenderConfigRoundTrip(t *testing.T) {
 	for _, s := range cfg.Sources {
 		ids[s.ID] = true
 	}
-	for _, id := range []string{"mc_bot", "caddy", "immich", "minecraft-latest", "portainer"} {
+	for _, id := range []string{"weather_bot", "caddy", "paperless", "factorio-current", "watchtower"} {
 		if !ids[id] {
 			t.Errorf("нет включённого %s", id)
 		}
 	}
-	for _, id := range []string{"colord", "authme", "weird-dir-on"} {
+	for _, id := range []string{"colord", "chatlog", "weird-dir-on"} {
 		if ids[id] {
 			t.Errorf("%s должен быть закомментирован", id)
 		}
@@ -199,7 +199,7 @@ func TestRenderConfigRoundTrip(t *testing.T) {
 			t.Errorf("кандидата %s нет даже в комментариях", id)
 		}
 	}
-	if !strings.Contains(text, "исправить: sudo setfacl -m u:logbot:x /srv/minecraft") {
+	if !strings.Contains(text, "исправить: sudo setfacl -m u:logbot:x /srv/factorio") {
 		t.Error("нет подсказки по правам")
 	}
 	if !strings.Contains(text, `"/srv/weird dir/on.log"`) {
@@ -218,10 +218,10 @@ func TestRenderConfigRoundTrip(t *testing.T) {
 func TestMissing(t *testing.T) {
 	cfg, err := config.Parse([]byte(`
 sources:
-  - {id: mc_bot, type: systemd, unit: mc_bot.service}
-  - {id: immich, type: docker, match: "stack:immich"}
-  - {id: nc, type: docker, container: nextcloud_app}
-  - {id: mc, type: file, path: "/srv/minecraft/logs/*.log"}
+  - {id: weather_bot, type: systemd, unit: weather_bot.service}
+  - {id: paperless, type: docker, match: "stack:paperless"}
+  - {id: git, type: docker, container: gitea_web}
+  - {id: factorio, type: file, path: "/srv/factorio/logs/*.log"}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -231,8 +231,8 @@ sources:
 	for _, c := range m.All() {
 		got = append(got, c.Source.ID)
 	}
-	// nextcloud: nextcloud_db не покрыт — стек предлагается целиком
-	want := "kino-monitor|caddy|ollama|mybot|collabora|nextcloud|old|open-webui|portainer"
+	// gitea: gitea_db не покрыт — стек предлагается целиком
+	want := "backup-report|caddy|node_exporter|mybot|gitea|jellyfin|old|vaultwarden|watchtower"
 	if strings.Join(got, "|") != want {
 		t.Errorf("\n got %s\nwant %s", strings.Join(got, "|"), want)
 	}
@@ -240,11 +240,11 @@ sources:
 
 func TestIDs(t *testing.T) {
 	cases := map[string]string{
-		"/srv/minecraft/logs/latest.log":           "minecraft-latest",
-		"/srv/minecraft/logs/backup.log":           "minecraft-backup",
-		"/srv/minecraft/plugins/AuthMe/authme.log": "authme",
-		"/home/erik/bots/mybot/bot.log":            "mybot-bot",
-		"/var/log/mybot.log":                       "mybot",
+		"/srv/factorio/logs/current.log":         "factorio-current",
+		"/srv/factorio/logs/backup.log":          "factorio-backup",
+		"/srv/factorio/mods/chatlog/chatlog.log": "chatlog",
+		"/home/alice/bots/mybot/bot.log":         "mybot-bot",
+		"/var/log/mybot.log":                     "mybot",
 	}
 	for p, want := range cases {
 		if got := sanitizeID(baseID(config.Source{Type: config.TypeFile, Path: p})); got != want {

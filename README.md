@@ -60,18 +60,19 @@ Defaults:logbot !pam_session
 
 ## Установка
 
-Нужен Go 1.24+ на машине, где собираете (на сервере не нужен).
-
-```bash
-make dist        # dist/logviewer-linux-amd64 и -arm64
-scp dist/logviewer-linux-amd64 server:/tmp/logviewer
-```
-
+Готовые бинарники для amd64 и arm64 лежат в [Releases](https://github.com/ReGo2552/tgBot_logViewer/releases).
 На сервере:
 
 ```bash
-sudo /tmp/logviewer install --timezone Europe/Moscow
+ARCH=$(dpkg --print-architecture)   # amd64 или arm64
+curl -fLO https://github.com/ReGo2552/tgBot_logViewer/releases/latest/download/logviewer-linux-$ARCH
+curl -fLO https://github.com/ReGo2552/tgBot_logViewer/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+chmod +x logviewer-linux-$ARCH
+sudo ./logviewer-linux-$ARCH install --timezone Europe/Moscow
 ```
+
+Собрать самому можно командой `make dist`: нужен Go 1.24+, бинарники появятся в `dist/`.
 
 Установщик по шагам:
 1. создаёт пользователя `logbot` и добавляет его в `systemd-journal`;
@@ -92,7 +93,8 @@ sudo systemctl start logviewer
 ```
 
 Повторный `install` обновляет бинарник, юнит и sudo-правило, а конфиг и `.env` не трогает.
-Так же обновляется версия: соберите новый бинарник и запустите `install` ещё раз.
+Так же обновляется версия: скачайте новый бинарник теми же командами и запустите
+`install` ещё раз. Текущая версия: `logviewer version`.
 
 ### Прокси
 
@@ -183,6 +185,13 @@ sudo systemctl daemon-reload
 ```bash
 make test     # go vet + тесты
 make build    # ./logviewer
+```
+
+CI гоняет `gofmt`, `vet` и тесты на каждый push. Релиз выпускается тегом: workflow
+собирает бинарники с `SHA256SUMS` и публикует их в Releases.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ## Лицензия

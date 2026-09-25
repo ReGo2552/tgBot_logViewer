@@ -14,16 +14,16 @@ func TestMask(t *testing.T) {
 		{"PROXY_URL=socks5h://myuser:s3cret@1.2.3.4:9966", "PROXY_URL=socks5h://***:***@1.2.3.4:9966"},
 		{"token 1234567890:AAaaBBbbCCccDDddEEeeFFffGGgghhhhiii ok", "token <tg-token> ok"},
 		{"BOT_TOKEN=abc DB_PASSWORD=qwerty api_key: zzz", "BOT_TOKEN=*** DB_PASSWORD=*** api_key: ***"},
-		{`{"password": "hunter2", "user": "erik"}`, `{"password": ***, "user": "erik"}`},
+		{`{"password": "hunter2", "user": "alice"}`, `{"password": ***, "user": "alice"}`},
 		{"Authorization: Basic dXNlcjpwYXNz", "Authorization: Basic ***"},
 		{"Authorization: Bearer abcdefghijkl", "Authorization: Bearer ***"},
 		{"jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N", "jwt <jwt>"},
 		{"key AKIAABCDEFGHIJKLMNOP", "key <aws-key>"},
 		{"ssn 123-45-6789", "ssn ***"},
 		// обычные строки не трогаем
-		{"[Server thread/INFO]: Erik joined the game", "[Server thread/INFO]: Erik joined the game"},
+		{"[Server thread/INFO]: Alice joined the game", "[Server thread/INFO]: Alice joined the game"},
 		{"GET /index.php 200 127.0.0.1:8090", "GET /index.php 200 127.0.0.1:8090"},
-		{"[AuthMe] Erik logged in", "[AuthMe] Erik logged in"},
+		{"[AuthMe] Alice logged in", "[AuthMe] Alice logged in"},
 	}
 	for _, c := range cases {
 		if got := r.Mask(c.in); got != c.want {

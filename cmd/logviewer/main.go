@@ -344,6 +344,12 @@ func cmdDockerHelper(ctx context.Context, args []string) error {
 	enc := json.NewEncoder(os.Stdout)
 
 	switch {
+	case len(args) == 1 && args[0] == "status":
+		cs, err := d.Status(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		return enc.Encode(cs)
 	case len(args) == 1 && args[0] == "ps":
 		cs, err := d.List(ctx)
 		if err != nil {
@@ -378,7 +384,7 @@ func cmdDockerHelper(ctx context.Context, args []string) error {
 		}
 		return enc.Encode(lines)
 	}
-	return errors.New("использование: docker-helper ps | docker-helper logs КОНТЕЙНЕР N")
+	return errors.New("использование: docker-helper ps | status | logs КОНТЕЙНЕР N")
 }
 
 // trustedPath — владелец root и запись только для root.

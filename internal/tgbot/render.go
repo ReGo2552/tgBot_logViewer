@@ -97,7 +97,14 @@ func fileName(s config.Source, res *logs.Result, now time.Time) string {
 	return strings.TrimSuffix(name, ".log") + "_" + now.Format("2006-01-02_150405") + ".txt"
 }
 
-const helpText = `<b>Логи сервера</b>
+const helpText = `<b>Сервер: ресурсы и логи</b>
+
+/status — CPU, RAM, диски, inode, сеть, uptime
+/top — процессы по CPU; /top mem — по памяти
+/services — состояние служб из конфига
+/containers — состояние и ресурсы контейнеров из конфига
+/alerts — активные проблемы, история, пауза уведомлений
+/widget — интерактивная панель (эксперимент, включается в конфиге)
 
 /logs — выбрать источник кнопками
 /logs <code>id</code> — последние строки источника

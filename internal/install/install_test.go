@@ -20,7 +20,7 @@ func TestUnitSudo(t *testing.T) {
 			t.Errorf("в sudo-режиме нельзя %s", opt)
 		}
 	}
-	for _, must := range []string{"User=logbot", "NoNewPrivileges=false", "ProtectHome=read-only", "EnvironmentFile=/etc/log-viewer/.env"} {
+	for _, must := range []string{"User=logbot", "NoNewPrivileges=false", "ProtectHome=read-only", "EnvironmentFile=/etc/log-viewer/.env", "StateDirectory=logviewer", "StateDirectoryMode=0700"} {
 		if !strings.Contains(u, must) {
 			t.Errorf("нет %s", must)
 		}

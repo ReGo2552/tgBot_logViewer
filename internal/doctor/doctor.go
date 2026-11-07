@@ -5,6 +5,8 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -64,11 +66,12 @@ func Run(ctx context.Context, o Options) []Check {
 	}
 
 	if o.Env != nil {
-		checkEnv(ctx, r, *o.Env, o.Telegram)
+		checkEnv(ctx, r, *o.Env, o.Telegram, cfg.Widgets.TestEnvironment)
 	}
 
 	c := o.Checker
 	r.add(OK, "пользователь бота", c.Name(), "")
+	checkMonitoring(ctx, r, cfg, c)
 	if cfg.HasType(config.TypeSystemd) {
 		checkJournal(ctx, r, cfg, c)
 	}
@@ -81,7 +84,7 @@ func Run(ctx context.Context, o Options) []Check {
 	return r.checks
 }
 
-func checkEnv(ctx context.Context, r *report, env config.Env, telegram bool) {
+func checkEnv(ctx context.Context, r *report, env config.Env, telegram, test bool) {
 	switch {
 	case env.Token == "":
 		r.add(Fail, "BOT_TOKEN", "не задан", "впишите токен от @BotFather в "+config.EnvPath)
@@ -107,7 +110,16 @@ func checkEnv(ctx context.Context, r *report, env config.Env, telegram bool) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	start := time.Now()
-	name, err := tgapi.GetMe(ctx, client, env.APIURL, env.Token)
+	var name string
+	if test {
+		var me struct {
+			Username string `json:"username"`
+		}
+		err = (&tgapi.API{Client: client, BaseURL: env.APIURL, Token: env.Token, Test: true}).Call(ctx, "getMe", map[string]any{}, &me)
+		name = me.Username
+	} else {
+		name, err = tgapi.GetMe(ctx, client, env.APIURL, env.Token)
+	}
 	if err != nil {
 		fix := ""
 		if env.Proxy == "" {
@@ -117,6 +129,44 @@ func checkEnv(ctx context.Context, r *report, env config.Env, telegram bool) {
 		return
 	}
 	r.add(OK, "Telegram "+via, fmt.Sprintf("@%s, ответ за %.1f с", name, time.Since(start).Seconds()), "")
+}
+
+func checkMonitoring(ctx context.Context, r *report, cfg *config.Config, c *access.Checker) {
+	if cfg.Monitor.Disable {
+		return
+	}
+	readable := true
+	for _, p := range []string{"/proc/stat", "/proc/meminfo", "/proc/net/dev"} {
+		if !c.Can(p, access.R) {
+			readable = false
+			r.add(Warn, "мониторинг", p+" недоступен пользователю "+c.Name(), "")
+		}
+	}
+	if readable {
+		r.add(OK, "мониторинг", fmt.Sprintf("замер каждые %s; top %d", cfg.Monitor.Interval, cfg.Monitor.TopLimit), "")
+	}
+	if cfg.Alerts.Enabled {
+		dir := filepath.Dir(cfg.Alerts.StateFile)
+		for {
+			_, err := os.Stat(dir)
+			if err == nil || !os.IsNotExist(err) || dir == "/" {
+				break
+			}
+			dir = filepath.Dir(dir)
+		}
+		tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if c.Command(tctx, "test", "-w", dir).Run() != nil || c.Command(tctx, "test", "-x", dir).Run() != nil {
+			r.add(Fail, "состояние уведомлений", cfg.Alerts.StateFile+": каталог недоступен для записи", "обновите установку: sudo logviewer install; для своего state_file настройте права на его каталог")
+		} else if _, err := os.Stat(cfg.Alerts.StateFile); err == nil && !c.Can(cfg.Alerts.StateFile, access.R) {
+			r.add(Fail, "состояние уведомлений", cfg.Alerts.StateFile+": файл недоступен для чтения", "владельцем файла состояния должен быть пользователь бота")
+		} else {
+			r.add(OK, "состояние уведомлений", cfg.Alerts.StateFile, "")
+		}
+	}
+	if cfg.Widgets.Enabled {
+		r.add(Warn, "виджеты", "эксперимент Bot API 10.4; проверьте /widget в совместимом клиенте", "")
+	}
 }
 
 func checkJournal(ctx context.Context, r *report, cfg *config.Config, c *access.Checker) {
@@ -158,6 +208,13 @@ func checkDocker(ctx context.Context, r *report, cfg *config.Config, c *access.C
 		return
 	}
 	r.add(OK, "docker ("+cfg.Docker.Access+")", fmt.Sprintf("контейнеров: %d", len(cs)), "")
+	if !cfg.Monitor.Disable {
+		if _, err := d.Status(ctx, cfg); err != nil {
+			r.add(Warn, "docker status", err.Error(), "проверьте версию установленного бинарника и поддержку docker inspect/stats")
+		} else {
+			r.add(OK, "docker status", "чтение состояния и ресурсов доступно", "")
+		}
+	}
 	for _, s := range cfg.Sources {
 		if s.Type != config.TypeDocker {
 			continue

@@ -9,14 +9,18 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/ReGo2552/tgBot_logViewer/internal/alerts"
 	"github.com/ReGo2552/tgBot_logViewer/internal/config"
 	"github.com/ReGo2552/tgBot_logViewer/internal/logs"
+	"github.com/ReGo2552/tgBot_logViewer/internal/monitor"
 	"github.com/ReGo2552/tgBot_logViewer/internal/tgapi"
 )
 
@@ -37,16 +41,49 @@ type Options struct {
 
 type App struct {
 	Options
-	store *store
-	sem   chan struct{} // не больше двух чтений логов одновременно
+	store          *store
+	sem            chan struct{} // не больше двух чтений логов одновременно
+	monitor        *monitor.Collector
+	resources      *monitor.ResourceCache
+	alerts         *alerts.Engine
+	api            *tgapi.API
+	widgetDisabled atomic.Bool
 }
 
 func Run(ctx context.Context, o Options) error {
+	ctx, cancel := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	defer func() { cancel(); workers.Wait() }()
 	client, err := tgapi.NewClient(o.Env.Proxy)
 	if err != nil {
 		return err
 	}
 	a := &App{Options: o, store: newStore(2000), sem: make(chan struct{}, 2)}
+	a.api = &tgapi.API{Client: client, BaseURL: o.Env.APIURL, Token: o.Env.Token, Test: o.Config.Widgets.TestEnvironment}
+	if !o.Config.Monitor.Disable {
+		a.monitor = monitor.New(o.Config.Monitor.Mounts)
+		a.resources = &monitor.ResourceCache{}
+		workers.Add(2)
+		go func() { defer workers.Done(); a.monitor.Run(ctx, o.Config.Monitor.Interval) }()
+		go func() { defer workers.Done(); a.resources.Run(ctx, o.Config, o.Fetcher.Docker) }()
+	}
+	if o.Config.Alerts.Enabled {
+		a.alerts, err = alerts.Open(o.Config.Alerts.StateFile, o.Config.Alerts.Hold, o.Config.Alerts.Interval, o.Config.Admins)
+		if err != nil {
+			return fmt.Errorf("уведомления: %w", err)
+		}
+		keys := map[string]bool{"cpu": true, "ram": true}
+		for _, p := range o.Config.Monitor.Mounts {
+			keys["disk:"+p] = true
+			keys["inode:"+p] = true
+		}
+		for _, id := range o.Config.Alerts.WatchSources {
+			keys["source:"+id] = true
+		}
+		if err := a.alerts.Prune(keys); err != nil {
+			return fmt.Errorf("уведомления: %w", err)
+		}
+	}
 	token := o.Env.Token
 
 	opts := []bot.Option{
@@ -61,6 +98,9 @@ func Run(ctx context.Context, o Options) error {
 	if o.Env.APIURL != "" {
 		opts = append(opts, bot.WithServerURL(o.Env.APIURL))
 	}
+	if o.Config.Widgets.TestEnvironment {
+		opts = append(opts, bot.UseTestEnvironment())
+	}
 	b, err := bot.New(token, opts...)
 	if err != nil {
 		return fmt.Errorf("подключение к Telegram: %w", tgapi.Scrub(err, token))
@@ -71,6 +111,12 @@ func Run(ctx context.Context, o Options) error {
 	}
 	_, err = b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: []models.BotCommand{
 		{Command: "logs", Description: "Логи: выбрать источник"},
+		{Command: "status", Description: "Ресурсы сервера"},
+		{Command: "top", Description: "Процессы: CPU и память"},
+		{Command: "services", Description: "Состояние служб"},
+		{Command: "containers", Description: "Состояние контейнеров"},
+		{Command: "alerts", Description: "Проблемы и уведомления"},
+		{Command: "widget", Description: "Панель ресурсов (эксперимент)"},
 		{Command: "discover", Description: "Что ещё можно добавить в конфиг"},
 		{Command: "doctor", Description: "Проверить доступ к источникам"},
 		{Command: "help", Description: "Справка"},
@@ -79,7 +125,15 @@ func Run(ctx context.Context, o Options) error {
 		a.Log.Warn("setMyCommands", "err", tgapi.Scrub(err, token))
 	}
 	a.Log.Info("бот запущен", "username", me.Username, "sources", len(o.Config.Sources), "admins", len(o.Config.Admins))
-	b.Start(ctx)
+	if a.alerts != nil {
+		workers.Add(1)
+		go func() { defer workers.Done(); a.runAlerts(ctx, b) }()
+	}
+	if o.Config.Widgets.Enabled {
+		a.pollWithWidgets(ctx, b)
+	} else {
+		b.Start(ctx)
+	}
 	return nil
 }
 
@@ -140,6 +194,14 @@ func (a *App) onMessage(ctx context.Context, b *bot.Bot, m *models.Message) {
 	}
 	cmd, _, _ = strings.Cut(cmd, "@")
 	switch cmd {
+	case "/status", "/top", "/services", "/containers", "/alerts":
+		panel := strings.TrimPrefix(cmd, "/")
+		if cmd == "/top" && len(fields) > 1 && fields[1] == "mem" {
+			panel = "top:mem"
+		}
+		a.panel(ctx, b, chatID, nil, panel)
+	case "/widget":
+		a.sendWidget(ctx, b, chatID)
 	case "/start", "/help":
 		a.send(ctx, b, chatID, helpText, nil)
 	case "/logs":
@@ -167,6 +229,8 @@ func (a *App) onCallback(ctx context.Context, b *bot.Bot, cq *models.CallbackQue
 
 	kind, arg, _ := strings.Cut(cq.Data, ":")
 	switch kind {
+	case "p":
+		a.panel(ctx, b, chatID, msg, arg)
 	case "m":
 		a.menu(ctx, b, chatID, msg, arg)
 	case "s":

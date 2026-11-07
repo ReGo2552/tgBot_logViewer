@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -46,8 +47,36 @@ type Config struct {
 	Docker   Docker   `yaml:"docker"`
 	Redact   Redact   `yaml:"redact"`
 	Sources  []Source `yaml:"sources"`
+	Monitor  Monitor  `yaml:"monitor"`
+	Alerts   Alerts   `yaml:"alerts"`
+	Widgets  Widgets  `yaml:"widgets"`
 
 	Location *time.Location `yaml:"-"`
+}
+
+type Monitor struct {
+	Disable  bool          `yaml:"disable"`
+	Interval time.Duration `yaml:"interval"`
+	Mounts   []string      `yaml:"mounts"`
+	TopLimit int           `yaml:"top_limit"`
+}
+
+type Alerts struct {
+	Enabled      bool          `yaml:"enabled"`
+	Interval     time.Duration `yaml:"interval"`
+	Hold         time.Duration `yaml:"hold"`
+	CPU          float64       `yaml:"cpu"`
+	RAM          float64       `yaml:"ram"`
+	Disk         float64       `yaml:"disk"`
+	Inodes       float64       `yaml:"inodes"`
+	RecoveryGap  float64       `yaml:"recovery_gap"`
+	WatchSources []string      `yaml:"watch_sources"`
+	StateFile    string        `yaml:"state_file"`
+}
+
+type Widgets struct {
+	Enabled         bool `yaml:"enabled"`
+	TestEnvironment bool `yaml:"test_environment"`
 }
 
 type Lines struct {
@@ -242,6 +271,72 @@ func (c *Config) normalize() error {
 			return fmt.Errorf("sources: id %q повторяется", s.ID)
 		}
 		seen[s.ID] = true
+	}
+	return c.normalizeMonitoring()
+}
+
+func (c *Config) normalizeMonitoring() error {
+	m, a := &c.Monitor, &c.Alerts
+	if m.Interval == 0 {
+		m.Interval = 5 * time.Second
+	}
+	if m.Interval < time.Second || m.Interval > time.Minute {
+		return errors.New("monitor.interval: от 1s до 1m")
+	}
+	if len(m.Mounts) == 0 {
+		m.Mounts = []string{"/"}
+	}
+	for _, p := range m.Mounts {
+		if !filepath.IsAbs(p) || filepath.Clean(p) != p {
+			return errors.New("monitor.mounts: нужны абсолютные пути без ./ и ..")
+		}
+	}
+	if m.TopLimit == 0 {
+		m.TopLimit = 10
+	}
+	if m.TopLimit < 1 || m.TopLimit > 20 {
+		return errors.New("monitor.top_limit: от 1 до 20")
+	}
+	if a.Interval == 0 {
+		a.Interval = 30 * time.Second
+	}
+	if a.Hold == 0 {
+		a.Hold = 2 * time.Minute
+	}
+	if a.Interval < 5*time.Second || a.Interval > time.Hour || a.Hold < a.Interval || a.Hold > 24*time.Hour {
+		return errors.New("alerts: interval от 5s до 1h, hold от interval до 24h")
+	}
+	if a.RecoveryGap == 0 {
+		a.RecoveryGap = 5
+	}
+	if math.IsNaN(a.RecoveryGap) || math.IsInf(a.RecoveryGap, 0) || a.RecoveryGap < 1 || a.RecoveryGap >= 100 {
+		return errors.New("alerts.recovery_gap: от 1 до 99")
+	}
+	for _, p := range []*float64{&a.CPU, &a.RAM, &a.Disk, &a.Inodes} {
+		if *p == 0 {
+			*p = 90
+		}
+		if math.IsNaN(*p) || math.IsInf(*p, 0) || *p <= a.RecoveryGap || *p > 100 {
+			return errors.New("alerts: пороги должны быть больше recovery_gap и не больше 100")
+		}
+	}
+	if a.StateFile == "" {
+		a.StateFile = "/var/lib/logviewer/alerts.json"
+	}
+	if !filepath.IsAbs(a.StateFile) {
+		return errors.New("alerts.state_file: нужен абсолютный путь")
+	}
+	for _, id := range a.WatchSources {
+		s, ok := c.Source(id)
+		if !ok || s.Type == TypeFile {
+			return fmt.Errorf("alerts.watch_sources: %q должен быть systemd или docker источником", id)
+		}
+	}
+	if m.Disable && (a.Enabled || c.Widgets.Enabled) {
+		return errors.New("alerts и widgets требуют включённый monitor")
+	}
+	if c.Widgets.TestEnvironment && !c.Widgets.Enabled {
+		return errors.New("widgets.test_environment требует widgets.enabled")
 	}
 	return nil
 }

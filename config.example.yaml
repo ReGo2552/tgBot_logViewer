@@ -19,6 +19,32 @@ docker:
   # direct — пользователь бота сам в группе docker, а это равносильно root.
   access: sudo
 
+# CPU/RAM/сеть/процессы собираются без sudo. Службы и Docker — каждые 30с.
+monitor:
+  disable: false
+  interval: 5s
+  mounts: ["/"]       # добавьте /srv, /var и другие нужные файловые системы
+  top_limit: 10       # от 1 до 20
+
+# Уведомления включаются явно. По умолчанию работают только команды просмотра.
+alerts:
+  enabled: false
+  interval: 30s
+  hold: 2m           # проблема должна сохраняться не меньше этого времени
+  cpu: 90            # проценты; 0 = значение по умолчанию (90)
+  ram: 90
+  disk: 90
+  inodes: 90
+  recovery_gap: 5    # восстановление при <= порог - 5 процентных пунктов
+  watch_sources: []  # ID из sources: эти службы/контейнеры должны быть запущены
+  state_file: /var/lib/logviewer/alerts.json
+
+# Экспериментальный Bot API 10.4. Старые клиенты могут не показать виджет.
+# При ошибке отправки /widget возвращает обычную панель /status.
+widgets:
+  enabled: false
+  test_environment: false # true ТОЛЬКО для тестового окружения Telegram
+
 redact:
   disable: false
   extra:               # свои регулярные выражения; совпадение заменяется на ***

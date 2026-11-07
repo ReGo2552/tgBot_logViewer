@@ -60,6 +60,11 @@ func RenderConfig(r *Result, m Meta) string {
 	w("  # sudo   — бот ходит в docker через sudo-правило на одну команду (рекомендуется);\n")
 	w("  # direct — пользователь бота сам в группе docker, а это равносильно root.\n")
 	w("  access: sudo\n\n")
+	w("# Мониторинг ресурсов без root; уведомления и виджеты включаются отдельно.\n")
+	w("# Остальные настройки: config.example.yaml в репозитории.\n")
+	w("monitor: {interval: 5s, mounts: [\"/\"], top_limit: 10}\n")
+	w("alerts: {enabled: false, watch_sources: []}\n")
+	w("widgets: {enabled: false}\n\n")
 
 	w("# Маскирование секретов (токены, пароли, user:pass@ в URL). Свои шаблоны — в extra.\n")
 	w("redact:\n")

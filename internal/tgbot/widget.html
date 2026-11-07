@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{font:14px sans-serif;margin:12px;color:var(--tg-theme-text-color,#20242b)}h3{margin:0 0 8px}.row{display:flex;justify-content:space-between;margin-top:8px}.track{height:6px;background:#8893a533;border-radius:4px;margin-top:4px}.fill{height:6px;background:#4388ef;border-radius:4px;width:0}#history{letter-spacing:1px;color:#4388ef;margin:10px 0}#note{font-size:12px;opacity:.7;margin:8px 0}button{margin:4px 3px 0 0}
+</style></head><body><h3 id="host">Сервер</h3><div id="time">Нет данных</div>
+<div class="row"><span>CPU</span><span id="cpu">—</span></div><div class="track"><div class="fill" id="cpuBar"></div></div>
+<div class="row"><span>RAM</span><span id="ram">—</span></div><div class="track"><div class="fill" id="ramBar"></div></div>
+<div class="row"><span>Диск /</span><span id="disk">—</span></div><div class="track"><div class="fill" id="diskBar"></div></div>
+<div id="history"></div><div id="note"></div><button id="refresh">Обновить</button><button id="top">Процессы</button><button id="services">Службы</button><button id="logs">Логи</button>
+<script>
+var W=TelegramWidget,busy=false;
+function text(id,value){document.getElementById(id).textContent=value}
+function render(raw){try{var s=JSON.parse(raw||'null');if(!s){text('note','Откройте исходное сообщение в личном чате с ботом.');return}text('host',s.h);text('time',s.t);['cpu','ram','disk'].forEach(function(k){var v=s[k];text(k,v<0?'Первый замер…':v+'%');document.getElementById(k+'Bar').style.width=Math.max(0,v)+'%'});var bars='▁▂▃▄▅▆▇█';text('history',(s.hist||[]).map(function(v){return bars[Math.max(0,Math.min(7,Math.round(v*7/100)))]}).join(''));text('note',s.note||'')}catch(e){text('note','Не удалось прочитать данные')}}
+function ask(action){if(busy)return;busy=true;W.request('monitor:'+action).then(function(a){if(action==='refresh'&&a.result)render(a.result);else if(action!=='refresh')text('note','Ответ отправлен в чат.');busy=false},function(e){text('note','Запрос не выполнен: '+e.code);busy=false})}
+document.getElementById('refresh').onclick=function(){ask('refresh')};document.getElementById('top').onclick=function(){ask('top')};document.getElementById('services').onclick=function(){ask('services')};document.getElementById('logs').onclick=function(){ask('logs')};
+W.onEvent('chatDataChanged',function(){render(W.chatData)});render(W.chatData);W.ready();
+</script></body></html>

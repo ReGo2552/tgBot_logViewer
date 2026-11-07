@@ -18,7 +18,7 @@ const (
 func Unit(user string, needSudo bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `[Unit]
-Description=logviewer: логи сервера в Telegram
+Description=logviewer: мониторинг и логи сервера в Telegram
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -30,6 +30,8 @@ EnvironmentFile=%[2]s
 ExecStart=%[3]s run --config %[4]s
 Restart=always
 RestartSec=10
+StateDirectory=logviewer
+StateDirectoryMode=0700
 
 # Изоляция. /home только на чтение, а не скрыт: логи бывают и там;
 # доступ всё равно решают обычные права файлов.
@@ -67,7 +69,7 @@ WantedBy=multi-user.target
 // читает конфиг только из /etc/log-viewer (владелец root) и отдаёт логи лишь тех
 // контейнеров, что перечислены в конфиге.
 func Sudoers(user string) string {
-	return fmt.Sprintf(`# logviewer: пользователь %[1]s читает логи docker-контейнеров из конфига — и только.
+	return fmt.Sprintf(`# logviewer: пользователь %[1]s читает логи и статус docker-контейнеров из конфига.
 # Создано командой: logviewer install
 %[1]s ALL=(root) NOPASSWD: %[2]s docker-helper *
 

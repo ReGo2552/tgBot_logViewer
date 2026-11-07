@@ -74,6 +74,21 @@ func Run(ctx context.Context, o Options) error {
 	if err := chownMode(config.Dir, 0, gid, 0o750); err != nil {
 		return err
 	}
+	// Create the systemd state directory before doctor runs on a fresh install.
+	u, err := user.Lookup(o.User)
+	if err != nil {
+		return err
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll("/var/lib/logviewer", 0o700); err != nil {
+		return err
+	}
+	if err := chownMode("/var/lib/logviewer", uid, gid, 0o700); err != nil {
+		return err
+	}
 
 	in.next("конфиг " + config.DefaultPath)
 	cfg, err := in.ensureConfig(ctx, gid)

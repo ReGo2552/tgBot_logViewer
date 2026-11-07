@@ -79,6 +79,28 @@ func TestCheckAdmins(t *testing.T) {
 	}
 }
 
+func TestMonitoringConfig(t *testing.T) {
+	c, err := Parse([]byte("monitor: {interval: 2s, mounts: ['/', '/srv'], top_limit: 20}\nalerts: {enabled: true, interval: 10s, hold: 30s}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Monitor.Interval.String() != "2s" || c.Alerts.CPU != 90 || c.Alerts.RecoveryGap != 5 {
+		t.Fatalf("%+v", c)
+	}
+	for _, bad := range []string{
+		"monitor: {interval: 100ms}", "monitor: {top_limit: 100}", "monitor: {mounts: ['../etc']}",
+		"alerts: {cpu: 101}", "alerts: {ram: .nan}", "alerts: {recovery_gap: .inf}",
+		"alerts: {interval: 20s, hold: 10s}", "alerts: {state_file: relative.json}",
+		"alerts: {watch_sources: [missing]}", "widgets: {test_environment: true}",
+		"monitor: {disable: true}\nwidgets: {enabled: true}",
+		"monitor: {disable: true}\nalerts: {enabled: true}",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil {
+			t.Fatalf("accepted %s", bad)
+		}
+	}
+}
+
 func TestLoadEnvFile(t *testing.T) {
 	p := t.TempDir() + "/.env"
 	if err := os.WriteFile(p, []byte("# comment\nLV_A=1\nexport LV_B=\"two words\"\nLV_C='x=y'\nbroken\n"), 0o600); err != nil {
